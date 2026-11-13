@@ -7,17 +7,19 @@ The LA add-ons for the **Akai MPC500** (OS 1.31), built on the [Open500](https:/
 | | |
 |---|---|
 | **[⬇ The add-ons (LA-v2.9c.zip)](../../releases/latest/download/LA-v2.9c.zip)** | The 14 add-on files, in the order the MPC must load them |
-| **[⬇ Manual (PDF)](../../releases/latest/download/Open500-Manual-LA-v2.9c.pdf)** | Installing, and everything the add-ons do |
-| **[⬇ Firmware patcher (HTML)](../../releases/latest/download/Open500-LA-Firmware-Patcher.html)** | Makes the LA firmware from Akai's own OS 1.31 file, in your browser |
+| **[⬇ Quick Start (PDF)](../../releases/latest/download/Open500-LA-Quick-Start.pdf)** | Installation and technical specifications, 3 pages |
+| **[⬇ Manual (PDF)](../../releases/latest/download/Open500-Manual-LA-v2.9c.pdf)** | Full reference for every add-on |
+| **[⬇ Firmware patcher (HTML)](../../releases/latest/download/Open500-LA-Firmware-Patcher.html)** | Builds the LA firmware from Akai OS 1.31, client-side |
 
 Earlier versions are on the [Releases](../../releases) page.
 
 ## Install
 
-1. Unzip **LA-v2.9c.zip** straight onto the root of the CF card, so the card holds the folder `LA v2.9c` with the 14 WAV files in it. Unzip it onto the card itself, not onto the computer first: the MPC loads the files in the order they were written, and `LA.WAV` must come first.
-2. On the MPC500, press **MODE + PAD 2** (LOAD), select the `LA v2.9c` folder and press **DO IT**.
+1. **Firmware (one time).** Open the firmware patcher, drop Akai's unmodified `mpc500.bin` (OS 1.31, 514,732 bytes) onto it, save the generated `MPC500.bin` to the card root, and flash it (SHIFT + power on, REC). Required: the add-ons run only on the LA firmware.
+2. **Add-ons.** Extract **LA-v2.9c.zip** directly to the CF card root. The MPC500 loads files in write order; the zip stores them in load order (`LA.WAV` first, `MASTER.WAV` last).
+3. **Load.** MODE + PAD 2 (LOAD), select `LA v2.9c`, DO IT. Add-ons run from RAM: reload after every power-on.
 
-For switching off and straight back on, flash the LA firmware once: open the firmware patcher, drop Akai's `mpc500.bin` (from the OS 1.31 update) onto it, and flash the `MPC500.bin` it saves. The manual has every step, a Mac install and what to do if something goes wrong.
+Full procedure, specifications and troubleshooting: the [Quick Start](../../releases/latest/download/Open500-LA-Quick-Start.pdf).
 
 ## What's in It
 

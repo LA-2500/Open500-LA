@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open500 LA Quick Start</title>
+<style>
+  :root {
+    --text: "New Century Schoolbook", "Century Schoolbook", "Century Schoolbook L", "TeX Gyre Schola", Georgia, serif;
+    --head: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
+    --model: "Bookman Old Style", "Bookman", "URW Bookman", "URW Bookman L", "TeX Gyre Bonum", Georgia, serif;
+    --ink: #111;
+    --rule: #222;
+    --tint: #f3f3f0;
+  }
+  html { background: #fff; color: var(--ink); }
+  body { font-family: var(--text); font-size: 11.5pt; line-height: 1.5; max-width: 7.2in; margin: 0 auto; padding: 0.3in 0.4in 0.6in; }
+  h1, h2 { font-family: var(--head); font-weight: 700; line-height: 1.2; }
+  .top { text-align: center; border-bottom: 3px solid var(--rule); padding-bottom: 0.12in; margin-bottom: 0.2in; }
+  .top .line { font-family: var(--head); font-weight: 700; font-size: 11pt; letter-spacing: 0.3em; }
+  .top .model { font-family: var(--model); font-weight: 700; font-size: 34pt; margin: 0.04in 0; }
+  .top .book { font-family: var(--head); font-weight: 700; font-size: 15pt; }
+  h2 { font-size: 13.5pt; margin: 0.22in 0 0.06in; border-bottom: 1px solid var(--rule); padding-bottom: 2px; }
+  ol, ul { margin: 0 0 0.1in 0.2in; padding-left: 0.15in; }
+  li { margin-bottom: 0.05in; }
+  p { margin: 0 0 0.08in; }
+  .key { font-family: var(--head); font-weight: 700; font-size: 9.5pt; white-space: nowrap; }
+  .lcd { font-family: "Consolas", "DejaVu Sans Mono", monospace; font-size: 10pt; background: var(--tint); padding: 0 3px; }
+  pre { font-family: "Consolas", "DejaVu Sans Mono", monospace; font-size: 10pt; background: var(--tint); padding: 8px 12px; margin: 0.04in 0 0.12in; }
+  .note { border-left: 4px solid var(--rule); background: var(--tint); padding: 0.06in 0.12in; margin: 0.1in 0; }
+  table { border-collapse: collapse; width: 100%; margin: 0.04in 0 0.12in; font-size: 10.5pt; }
+  th, td { border: 1px solid #999; padding: 3px 8px; text-align: left; vertical-align: top; }
+  th { font-family: var(--head); font-size: 9.5pt; white-space: nowrap; background: var(--tint); width: 1%; }
+  @page { size: letter; margin: 0.5in 0.5in 0.6in; @bottom-center { content: counter(page); font-family: Helvetica, Arial, sans-serif; font-size: 9pt; color: #555; } }
+  @media print { body { max-width: none; padding: 0; } }
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="line">OPEN500 &middot; MPC500</div>
+  <div class="model">LA v2.9c</div>
+  <div class="book">Quick Start: Installation</div>
+</div>
+
+<h2>Requirements</h2>
+<ul>
+  <li>Akai MPC500.</li>
+  <li>CompactFlash card, FAT formatted.</li>
+  <li>Computer with CF card reader and web browser.</li>
+  <li>Akai MPC500 OS 1.31 update: <span class="lcd">mpc500_v131_00.zip</span> (Akai Professional).</li>
+  <li><span class="lcd">Open500-LA-Firmware-Patcher.html</span> and <span class="lcd">LA-v2.9c.zip</span> (release page).</li>
+</ul>
+
+<h2>1. Firmware (One Time)</h2>
+<p>The add-ons require the LA firmware: Akai OS 1.31 with the Open500 loader resident in flash. The patcher applies a binary patch client-side (JavaScript, no upload, no network access), recomputes the OS CRC-32 and verifies the output against the reference SHA-256 before release.</p>
+<ol>
+  <li>Extract <span class="lcd">mpc500.bin</span> from <span class="lcd">mpc500_v131_00.zip</span>.</li>
+  <li>Open <span class="lcd">Open500-LA-Firmware-Patcher.html</span> in a web browser.</li>
+  <li>Drop <span class="lcd">mpc500.bin</span> onto the page. Input is validated by size (514,732 bytes), CRC-32 and SHA-256; any other file is rejected.</li>
+  <li>Status <em>Patched and verified</em>: click <strong>Save MPC500.bin</strong>.</li>
+  <li>Copy <span class="lcd">MPC500.bin</span> to the card root.</li>
+  <li>Hold <span class="key">SHIFT</span> and power on. Press <span class="key">REC</span> at the prompt. Wait for completion.</li>
+  <li>Delete <span class="lcd">MPC500.bin</span> from the card.</li>
+</ol>
+<p>The update rewrites the OS region only. The bootloader is not modified. Programs, sequences and samples on the card are not affected. Repeat only for a new firmware version.</p>
+
+<h2>2. Add-on Files</h2>
+<p>The MPC500 loads files in the order they were written to the card. <span class="lcd">LA.WAV</span> must load first. The zip stores the files in load order. Extract it directly to the card.</p>
+<table>
+  <tr><th>Windows</th><td>Right-click <span class="lcd">LA-v2.9c.zip</span> &gt; <em>Extract All</em> &gt; <em>Browse</em> &gt; select the card drive (e.g. <span class="lcd">E:\</span>). Remove any trailing <span class="lcd">\LA-v2.9c</span> from the destination. <em>Extract</em>.</td></tr>
+  <tr><th>macOS</th><td>Copy the zip to the card. Double-click it on the card. Delete the zip.</td></tr>
+</table>
+<pre>CF card
+└── LA v2.9c
+    ├── LA.WAV         (first)
+    ├── ...
+    └── MASTER.WAV     (last; 14 files)</pre>
+<ul>
+  <li>Delete any earlier add-on folder first. Do not extract over an existing folder.</li>
+  <li>Do not extract to the computer and copy the folder: the copy order is not preserved.</li>
+  <li>Eject the card before removal.</li>
+</ul>
+
+<h2>3. Loading</h2>
+<ol>
+  <li><span class="key">MODE</span> + <span class="key">PAD 2</span> (LOAD). Select <span class="lcd">LA v2.9c</span>. <span class="key">DO IT</span>.</li>
+  <li>Clear memory: <span class="key">Yes</span> = empty memory. <span class="key">No</span> = keep current contents.</li>
+  <li>Display: <span class="lcd">LOADING...</span> / <span class="lcd">LA v2.9c</span> (about 3 s, first load after power-on only). Add-ons active.</li>
+</ol>
+<div class="note">Add-ons execute from working RAM; no add-on code is written to flash. Reload after every power-on. With a saved project: load the project, then the add-on folder, clear memory <span class="key">No</span>.</div>
+
+<h2>Access</h2>
+<table>
+  <tr><th>MODE + PAD 4</th><td>Record menu: S500, Audio Track, Resample</td></tr>
+  <tr><th>MODE + PAD 5</th><td>Trim</td></tr>
+  <tr><th>MODE + PAD 6</th><td>Program</td></tr>
+  <tr><th>MODE + PAD 9</th><td>Pad FX: Print FX, Master FX, Input FX</td></tr>
+  <tr><th>MODE + PAD 10</th><td>Seq Edit</td></tr>
+  <tr><th>MODE + PAD 12</th><td>Song</td></tr>
+  <tr><th>TRACK</th><td>Track</td></tr>
+  <tr><th>TIMING CORRECT</th><td>TC 3000</td></tr>
+  <tr><th>MODE + PAD 8</th><td>Other: all add-ons, Zone, 25 Levels</td></tr>
+</table>
+<p>Original MPC500 page: last entry of the page list, <em>ENTER DEFAULT</em>, <span class="key">DO IT</span>.</p>
+
+<h2>Technical Specifications</h2>
+<table>
+  <tr><th>Target</th><td>Akai MPC500, OS 1.31 (<span class="lcd">mpc500.bin</span>)</td></tr>
+  <tr><th>Image size</th><td>514,732 bytes; OS header at 0x10000, CRC-32 field at 0x10010, OS region 449,196 bytes</td></tr>
+  <tr><th>Input SHA-256</th><td><span class="lcd" style="font-size:8pt">7ba01305b1b2c89701e0d7c1d92973920a76c13d0232d9cbc579767332c2940d</span></td></tr>
+  <tr><th>Output SHA-256</th><td><span class="lcd" style="font-size:8pt">963ac96b19c51ba8a900611a22301b1f516c6192c0aa0a373878bebcc9639c8e</span></td></tr>
+  <tr><th>Patch 1</th><td>Open500 loader, 1,295 bytes at 0x103EC, written over an all-zero region of the image</td></tr>
+  <tr><th>Patch 2</th><td>Hook pointer, 4 bytes at 0x2B328</td></tr>
+  <tr><th>Akai code distributed</th><td>None. The patch contains Open500 data only; the base image is supplied by the user.</td></tr>
+  <tr><th>Add-on format</th><td>14 RIFF/WAVE containers carrying native code, 227,552 bytes total; loaded by the MPC500 sample loader in write order</td></tr>
+  <tr><th>Add-on manager</th><td><span class="lcd">LA.WAV</span> (Open500 HUB); identified by content, not file name</td></tr>
+  <tr><th>Power-on behaviour</th><td>LA firmware distinguishes cold boot from folder reload; residual RAM contents are ignored at power-on</td></tr>
+  <tr><th>Licence</th><td>GNU GPL v3; source at github.com/LA-2500/Open500-LA</td></tr>
+</table>
+
+<h2>Troubleshooting</h2>
+<table>
+  <tr><th>Erratic add-on behaviour</th><td>Wrong file order. Delete the folder. Extract the zip to the card again.</td></tr>
+  <tr><th>Error after power-on</th><td>Power cycle. Reload the add-on folder.</td></tr>
+  <tr><th>Add-on manager not responding</th><td><span class="key">SHIFT</span> + <span class="key">ERASE/UNDO</span> reloads <span class="lcd">LA.WAV</span>.</td></tr>
+  <tr><th>Restore factory OS</th><td>Flash the original <span class="lcd">mpc500.bin</span> as in step 1. Removes Open500.</td></tr>
+</table>
+<p>Full reference: <span class="lcd">Open500-Manual-LA-v2.9c.pdf</span>.</p>
+</body>
+</html>
