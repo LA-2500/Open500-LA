@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open500 LA Firmware Patcher</title>
+<style>
+:root { --bg:#f4f3ef; --panel:#fff; --text:#1d1d1b; --muted:#66645e; --line:#b9b6ad; --accent:#a8321f; --on-accent:#fff; --ok:#1f6f43; --bad:#a8321f; }
+@media (prefers-color-scheme: dark) { :root { --bg:#171716; --panel:#232321; --text:#efede7; --muted:#a8a59d; --line:#55534d; --accent:#ec7a63; --on-accent:#1d1d1b; --ok:#71c997; --bad:#f09380; } }
+* { box-sizing:border-box; }
+body { margin:0; padding:48px 16px; background:var(--bg); color:var(--text); font:16px/1.5 system-ui, "Segoe UI", sans-serif; }
+main { max-width:520px; margin:0 auto; }
+h1 { margin:0 0 4px; font-size:26px; line-height:1.2; }
+p { margin:0; }
+.sub { color:var(--muted); margin-bottom:24px; }
+#drop { display:block; padding:40px 20px; background:var(--panel); border:2px dashed var(--line); border-radius:8px; text-align:center; cursor:pointer; }
+#drop.over, #drop:hover { border-color:var(--accent); }
+#drop:focus-within { outline:2px solid var(--accent); outline-offset:2px; }
+#drop strong { display:block; }
+#drop span { color:var(--muted); font-size:14px; }
+#drop input { position:absolute; opacity:0; width:1px; height:1px; }
+#status { min-height:24px; margin-top:16px; }
+#status[data-state="ok"] { color:var(--ok); font-weight:600; }
+#status[data-state="bad"] { color:var(--bad); font-weight:600; }
+#save { display:none; margin-top:12px; padding:12px 20px; background:var(--accent); color:var(--on-accent); border-radius:6px; font-weight:600; text-decoration:none; }
+#save.show { display:inline-block; }
+.note { margin-top:32px; padding-top:16px; border-top:1px solid var(--line); color:var(--muted); font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Open500 LA Firmware Patcher</h1>
+<p class="sub">Updates the factory Akai MPC500 OS 1.31 to LA 2.xx firmware (or newer).</p>
+<label id="drop">
+  <input id="file" type="file" accept=".bin">
+  <strong>Drop the factory mpc500.bin here</strong>
+  <span>or click to choose it</span>
+</label>
+<p id="status" role="status"></p>
+<a id="save" download="MPC500.bin">Save MPC500.bin</a>
+<p class="note">Your file stays on this computer. The patcher only accepts the unmodified Akai OS 1.31 file, and it checks that the result matches the updated firmware byte for byte.</p>
+</main>
+<script>
+// Open500 patcher: applies the Open500 loader to an original Akai MPC500 OS 1.31 file, entirely in the browser.
+// Nothing is uploaded. Works in the page (window.Open500Patcher) and in Node (module.exports) for testing.
+(function (root) {
+  'use strict';
+
+  var CRC_TABLE = (function () {
+    var t = new Uint32Array(256);
+    for (var n = 0; n < 256; n++) {
+      var c = n;
+      for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  // standard CRC32 (zlib), same algorithm the MPC500 bootloader uses to validate an OS update
+  function crc32(u8, start, end) {
+    var c = 0xFFFFFFFF;
+    for (var i = start || 0, e = (end === undefined ? u8.length : end); i < e; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  function hexToBytes(hex) {
+    var out = new Uint8Array(hex.length / 2);
+    for (var i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+    return out;
+  }
+
+  function u32le(u8, off) { return (u8[off] | (u8[off + 1] << 8) | (u8[off + 2] << 16) | (u8[off + 3] << 24)) >>> 0; }
+
+  // returns { ok: true, data: Uint8Array } or { ok: false, error: '...' }
+  function applyPatch(input, patch) {
+    var src = new Uint8Array(input);
+    if (src.length !== patch.size)
+      return { ok: false, error: 'Wrong file size (' + src.length + ' bytes). Expected the MPC500 OS 1.31 file "mpc500.bin" (' + patch.size + ' bytes).' };
+    var hdr = String.fromCharCode.apply(null, src.subarray(patch.os_header, patch.os_header + 6));
+    if (hdr !== 'MPC500')
+      return { ok: false, error: 'This is not an MPC500 OS file.' };
+    var base = crc32(src);
+    if (base === patch.result_crc32)
+      return { ok: false, error: 'This file is already patched with Open500. Use it as it is.' };
+    if (base !== patch.base_crc32)
+      return { ok: false, error: 'This is not the original OS 1.31 (version ' + src[patch.os_header + 8] + '.' + src[patch.os_header + 9] +
+        ', CRC32 ' + base.toString(16) + '). Open500 only supports the unmodified Akai OS 1.31.' };
+
+    var out = new Uint8Array(src);
+    for (var i = 0; i < patch.patches.length; i++) {
+      var p = patch.patches[i], orig = hexToBytes(p.orig), data = hexToBytes(p.data);
+      for (var j = 0; j < orig.length; j++)
+        if (out[p.off + j] !== orig[j]) return { ok: false, error: 'Unexpected content at offset 0x' + (p.off + j).toString(16) + '.' };
+      out.set(data, p.off);
+    }
+    // OS checksum: CRC32 of the OS image with the CRC field set to zero, stored little-endian in the header
+    var c = patch.crc_off, osSize = u32le(out, patch.os_header + 0xC);
+    out[c] = out[c + 1] = out[c + 2] = out[c + 3] = 0;
+    var crc = crc32(out, patch.os_header, patch.os_header + osSize);
+    out[c] = crc & 0xFF; out[c + 1] = (crc >>> 8) & 0xFF; out[c + 2] = (crc >>> 16) & 0xFF; out[c + 3] = (crc >>> 24) & 0xFF;
+
+    if (crc32(out) !== patch.result_crc32)
+      return { ok: false, error: 'Internal check failed: the result does not match the tested Open500 firmware.' };
+    return { ok: true, data: out };
+  }
+
+  var api = { crc32: crc32, applyPatch: applyPatch };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.Open500Patcher = api;
+})(this);
+
+</script>
+<script>
+var PATCH = {"name": "LA 2.xx firmware (or newer)", "target": "Akai MPC500 OS 1.31 (mpc500.bin)", "size": 514732, "base_crc32": 3222408408, "base_sha256": "7ba01305b1b2c89701e0d7c1d92973920a76c13d0232d9cbc579767332c2940d", "result_crc32": 105489587, "result_sha256": "963ac96b19c51ba8a900611a22301b1f516c6192c0aa0a373878bebcc9639c8e", "os_header": 65536, "crc_off": 65552, "os_size": 449196, "patches": [{"off": 66540, "orig": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", "data": "224f13d20b420900062f162f262f362f462f562f662f762f862f962fa62fb62fc62fd62fe62f0bd1115e0bd0023e01892fa1090009d0023e018b2aa109007db10900018902a0090039a0090008a0090070fe4b8830ed488800008088000000980ad0083e0ad40bd20b420900e230018b0fa1090006d1e11160b10900090002a009001ca0090007a00900090000000e0030ed4888e04f4c88e36100e009dc02210471104cfb8b08d0e3614071022107d0e3614471022106d0e3614c71022109a009000900510000000143504d013d2a8b00000e0018d9926ae3692c79926ca229c76ca368c92815d1a36019201030208b13d18360192008201b8903b1090000e0e36120710221d5b00900e6b00900b82b01896ba00900c9b00900deb00900b82b018963a0090000e0e3612471022131a0090007a00900090040061c88020000000000000411d412d20b420900e361487112620032018b1da009000221e36d207dd26dd82d038ba1b0090002a00900a1b00900b2b00900b82b018b0ba00900c1b0090033a0090005a00900090030ed4888e04f4c88e36d207dd26dd82d018b78a0090001e0003d058b0ed2ec320b4209000dd1115ee36d247dd26dd82d018b68a00900ff7de3612471d221d3600fc9082001895ea00900bcb009005aa0090005a0090009000000012030ed4888e3613071b221b36913d00c39925c935a12d3323c018b16a00900c82c018b12a0090030790eddec3dd36800e2014c017c104c068995600d600c3201280278f7af0900a032058902e0e3612071022124a0090007a009000900000100000170000000000120b36912d00c399269dc39966c10dad368a838c82c07899660dc3002638c333220ff7cf6af09000bd1ec3100e0022101e0e3612071022108d0e3612471022160b00900d8a0090009a009000900180100000000f1a8400100000001000088d1126b0b00090086d112621153e36b307bb26b223b078b323b0589b2601540028b0c3b0b000900236b0b000900224f7cd1115aa23b0b89b26c154c088bb36279d00c328bb009000389cc3bf2af090000eb264f0b000900e360607002600820148900e0e36160710221e360647002606ed10221e360687002606dd10221e3616c71126100e002116ad100210b000900e3614071126068d22030028b115067d220300b000900224f80e188b00900e3602070026002e2203026894ce186b009004fe183b0090041e180b0090044e17db0090045e17ab0090044e177b0090020e174b00900e3683078826855d00c3808ec84611c616ab00900104cf98b20e165b00900264f0b00090042e15fb0090041e15cb0090044e159b0090020e156b00900e36830788268836b08ec044b044b044b044bb3600fc903614fb00900104cf48b20e143b0090020e140b0090020e13db0090020e13ab00900264f0b00090021600d6038d33030158b027221600d6036d330300f8b027221600d6034d33030098b027221600d6032d33030038b027218000b00090008000b000900f66ef66df66cf66bf66af669f668f667f666f665f664f663f662f661f660264f0b00090025d0102025d31043fd8b0b00090023d0102021d31043fd8b0b000900224f1360307039e22730008b07700361efbf0900264f0b000900224f162f1360094009400fc90361eabf0900f66113600fc90361e4bf0900264f0b00090011d31043fd8b0b000900090030ed48880001000070064988a4064988800649880143504d013d2a8b100100004d50000043480000554200005f330000000000b600100000040000b6000070"}, {"off": 176936, "orig": "70fe4b88", "data": "ec0301a0"}]};
+var OLDER_OPEN500_CRC32 = 3413341323;
+var input = document.getElementById('file'), drop = document.getElementById('drop');
+var statusEl = document.getElementById('status'), save = document.getElementById('save'), url = null;
+
+function show(state, text) { statusEl.dataset.state = state; statusEl.textContent = text; }
+function patch(buf) {
+  var u = new Uint8Array(buf);
+  if (u.length === PATCH.size && Open500Patcher.crc32(u) === OLDER_OPEN500_CRC32)
+    return show('bad', 'This is an older Open500 firmware. Choose the factory Akai mpc500.bin instead.');
+  var r = Open500Patcher.applyPatch(u, PATCH);
+  if (!r.ok) return show('bad', r.error);
+  url = URL.createObjectURL(new Blob([r.data], { type: 'application/octet-stream' }));
+  save.href = url; save.classList.add('show');
+  show('ok', 'Patched and verified. Save the file below.');
+}
+function handle(file) {
+  if (!file) return;
+  if (url) { URL.revokeObjectURL(url); url = null; }
+  save.classList.remove('show'); save.removeAttribute('href');
+  show('', 'Checking ' + file.name + '...');
+  var rd = new FileReader();
+  rd.onload = function () { patch(rd.result); };
+  rd.onerror = function () { show('bad', 'That file could not be read.'); };
+  rd.readAsArrayBuffer(file);
+}
+input.addEventListener('change', function () { handle(input.files[0]); input.value = ''; });
+['dragenter', 'dragover'].forEach(function (t) { window.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add('over'); }); });
+window.addEventListener('dragleave', function (e) { if (!e.relatedTarget) drop.classList.remove('over'); });
+window.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('over'); handle(e.dataTransfer.files[0]); });
+</script>
+</body>
+</html>
