@@ -1,6 +1,6 @@
 # Open500 LA v2.9c
 
-The LA add-ons for the **Akai MPC500** (OS 1.31), built on the [Open500](https://github.com/M45K/open500) platform: MPC3000-style timing correct and swing, S500 sampling based on the Akai S-series samplers, audio tracks, songs, a full program page, trim and zones, and print, master and input effects. They load from the memory card like samples; nothing on the MPC is changed for good.
+Add-on set for the **Akai MPC500** (OS 1.31), built on the [Open500](https://github.com/M45K/open500) platform. 14 native-code add-ons delivered as WAV files and loaded through the MPC500 sample loader. Replaced pages keep the original MPC500 page one entry away (ENTER DEFAULT). Flashing the factory OS removes Open500 completely; the bootloader is never modified.
 
 ## Download
 
@@ -21,36 +21,48 @@ Earlier versions are on the [Releases](../../releases) page.
 
 Full procedure, specifications and troubleshooting: the [Quick Start](../../releases/latest/download/Open500-LA-Quick-Start.pdf).
 
-## What's in It
+## Add-ons
 
-| File | Page | |
-|---|---|---|
-| `LA.WAV` | LA | The add-on manager (the Open500 HUB, renamed); loads first |
-| `PROGRAM.WAV` | Program | Every pad parameter of the program on one page, and a safe Purge |
-| `TRIM.WAV` | Trim | Trim with the Q-Link slider jumping between hits; extract to a new pad |
-| `ZONE.WAV` | Zone | Split a sample into zones by pressing pads while it plays |
-| `SONG.WAV` | Song | Build songs with the pads |
-| `SEQEDIT.WAV` | Seq Edit | Sequence length (with duplicate) and bar copy |
-| `TRACK.WAV` | Track | Track type, MIDI channel and track select on one page |
-| `TC3000.WAV` | TC 3000 | MPC3000-style timing correct and swing; shift existing notes |
-| `25LEVELS.WAV` | 25 Levels | 12 Levels from a MIDI keyboard over 25 semitones |
-| `S500.WAV` | S500 | Record menu: Audio Track, S500 Input, S500 Convert, Resample |
-| `AUDTRACK.WAV` | Audio Track | Record audio over the sequence from bar 1; Resample |
-| `PADFX.WAV` | Pad FX | Effects menu |
-| `PRINTFX.WAV` | Print FX | Render a pad through reverb, EQ or delay into a new sample |
-| `MASTER.WAV` | Master | Master EQ and compressor; live input effects |
+| File | Page | Access | Function |
+|---|---|---|---|
+| `LA.WAV` | LA | loads first | Add-on manager (Open500 HUB); installs and dispatches the other add-ons |
+| `PROGRAM.WAV` | Program | MODE + PAD 6 | All pad parameters of the current program on one page; safe Purge |
+| `TRIM.WAV` | Trim | MODE + PAD 5 | Trim with Q-Link slider snapping to transients; extract region to a new pad |
+| `ZONE.WAV` | Zone | Other / Trim | Zone a sample by pressing pads during playback |
+| `SONG.WAV` | Song | MODE + PAD 12 | Song construction from the pads |
+| `SEQEDIT.WAV` | Seq Edit | MODE + PAD 10 | Sequence length change (with duplicate); bar copy |
+| `TRACK.WAV` | Track | TRACK | Track type, MIDI channel, track select |
+| `TC3000.WAV` | TC 3000 | TIMING CORRECT | MPC3000-style timing correct and swing; shift existing notes |
+| `25LEVELS.WAV` | 25 Levels | Other | 12 Levels over 25 semitones from a MIDI keyboard |
+| `S500.WAV` | S500 | MODE + PAD 4 | Record menu: Audio Track, S500 Input, S500 Convert, Resample, MPC Record |
+| `AUDTRACK.WAV` | Audio Track | Record / Other | Audio recording aligned to bar 1 of the sequence; Resample |
+| `PADFX.WAV` | Pad FX | MODE + PAD 9 | Effects menu |
+| `PRINTFX.WAV` | Print FX | Pad FX | Offline render of a pad through reverb, EQ or delay to a new sample |
+| `MASTER.WAV` | Master | Pad FX | Master EQ and compressor on the output; Input FX (delay, modulation, reverb) |
+
+Other = MODE + PAD 8. Every add-on is also listed there.
+
+## Specifications
+
+| | |
+|---|---|
+| Target | Akai MPC500, OS 1.31 |
+| Firmware | Factory image 514,732 bytes. Patch: Open500 loader (1,295 bytes at 0x103EC, over an all-zero region) and 4-byte hook pointer at 0x2B328; OS CRC-32 at 0x10010 recomputed. Output verified by SHA-256. No Akai code is distributed. |
+| Add-ons | 14 RIFF/WAVE containers, 227,552 bytes; executed from working RAM; load order = card write order |
+| S500 | Anti-alias: 4th-order Butterworth low-pass at 0.45 × rate. Rate: 7.5–40 kHz in 0.5 kHz steps, plus 26.04 kHz; exact fractional sample-and-hold. Bits: 16/12/8. Optional normalise before quantisation. Pitch-up 0 to +24 semitones. Mono output. |
+| Power cycling | LA firmware separates cold boot from folder reload; residual RAM is ignored at power-on |
 
 ## Source
 
-Each add-on is built from its Python source in `sdk/examples/` (for example `python sdk/examples/s500.py`), with the Open500 SDK in `sdk/`. `firmware/` holds the firmware patcher and `build_patcher.py`, which makes it. The original Open500 README is `OPEN500-README.md`. No Akai code is in this repository.
+Add-on sources: `sdk/examples/` (for example `python sdk/examples/s500.py` builds and tests `S500.WAV` in the emulator). SDK, assembler and emulator: `sdk/`. Firmware patcher and generator: `firmware/` (`build_patcher.py`). Quick Start source: `guide/quickstart.html`. Original Open500 README: `OPEN500-README.md`.
 
 ## Contact
 
-By Lanny C (LA). Questions and bug reports: doctorbnetwork@gmail.com
+Lanny C (LA). Questions and bug reports: doctorbnetwork@gmail.com
 
-Videos: [youtube.com/@DoctorbNetwork](https://www.youtube.com/@DoctorbNetwork)
+Video: [youtube.com/@DoctorbNetwork](https://www.youtube.com/@DoctorbNetwork)
 
 ## Licence and Credits
 
-- Built on [Open500](https://github.com/M45K/open500) by M45K and contributors. Open500 and these add-ons are free software under the **GNU GPL v3** (`LICENSE`).
-- MPC, MPC500, MPC3000 and the S-series are Akai Professional's. This project is not made or endorsed by Akai.
+- Built on [Open500](https://github.com/M45K/open500) by M45K and contributors. Open500 and these add-ons: GNU GPL v3 (`LICENSE`).
+- MPC, MPC500, MPC3000 and the S-series are trademarks of Akai Professional. This project is not affiliated with or endorsed by Akai.
