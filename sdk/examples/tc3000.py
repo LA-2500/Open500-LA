@@ -12,6 +12,15 @@
     or the pads you hit (each hit adds the pad, hitting it again takes it out; " A05" one pad, " 3PD" three pads; no
     pad = ALL; every time the page opens = ALL). DO IT: every note of the track in the bars gets the TC/SW of the TC page (MPC3000; TC OFF = untouched) and
     then the shift (wrapping round the sequence). CANCEL goes back to the TC page.
+  * v3.0 (LA v3.0, 2026-11-13): PARAMS on the TC page or the EDIT page -> SWING TYPE page:  "SWING TYPE"  /  "MPC3000  96 PPQN"
+    or "SP-1200  24 PPQN" (wheel). PARAMS, DO IT or CANCEL go back to the page it came from (EDIT keeps its bars/pads).
+    Default MPC3000 (every time the add-on loads). SP-1200 (from the user's SP-1200 grooves + MPC 600 S manual ch. 4):
+    - the same swing placement as MPC3000 (1/16: 24 26 28 30 32 34 ticks, measured within 0.15 tick), but only the SP's
+      six settings 50 54 58 63 67 71 (63 = 62.5%, 67 = 66.7%: the same ticks as MPC 62 / 66); no 75%.
+    - TC OFF: every recorded note lands on the 24 PPQN grid (4 ticks), as the SP's own sequencer records; DO IT on the
+      EDIT page with TC OFF snaps the notes to that grid too (MPC3000 mode: TC OFF = untouched, as before).
+    Switching type moves the OS Swing% to the nearest step of the new type (75 -> 71, 62 <-> 63, 66 <-> 67: same timing).
+    The TC page shows "SP" at the end of row 2 in SP-1200 mode.
 
 MPC3000 swing (96 ticks per quarter; swung note = odd grid step, offset after it):
     1/16: 0 2 4 6 8 10 12   1/8: 0 4 8 12 16 20 24   1/32: 0 1 2 3 4 5 6     (SW 50 54 58 62 66 71 75)
@@ -43,6 +52,11 @@ BANKOBJ = 0x8849C98C
 TICKS = [48, 32, 24, 16, 12, 8, 1]
 TC_OPTS = ["1/8  ", "1/8T ", "1/16 ", "1/16T", "1/32 ", "1/32T", "OFF  "]
 SWSTEPS = [50, 54, 58, 62, 66, 71, 75]
+SWSTEPS_SP = [50, 54, 58, 63, 67, 71, 71]                    # SP-1200: six settings (the 7th entry is never kept: -> 71 = #5)
+SW_TH = ([54, 58, 62, 66, 71, 75], [54, 58, 62, 66, 70, 127])   # OS Swing% >= TH[i-1] -> step i (MPC3000, SP-1200)
+SP_GRID, K_PARAMS = 4, 0x15                                   # SP-1200 TC OFF: 24 PPQN = 4 ticks; PARAMS key code (printfx, HW)
+def _swstr(steps): return b''.join(b'%d%%\0' % s for s in steps)
+assert len(_swstr(SWSTEPS)) == len(_swstr(SWSTEPS_SP)) == 28
 SHIFT_OPTS = ["EARLIER %3d" % (i - 24) if i < 24 else ("NO SHIFT   " if i == 24 else "LATER   +%2d" % (i - 24)) for i in range(49)]
 NS, BEHIND, NPEND = 40, 8, 8         # snapshot: 8 events behind the playhead + 32 ahead; pending new notes
 # Note Repeat patch sites: (address, original words, new code(asm) )
@@ -67,6 +81,7 @@ pg.far_fire = True
 TCI = pg.choice("TC:", 0, 0, TC_OPTS, default=2)
 SWI = pg.choice(" SW:", 8, 0, ["%d%%" % s for s in SWSTEPS], default=0)
 pg.label("DO IT = EDIT", 0, 1)
+MODEL = pg.dlabel(14, 1, 2)                                   # "SP" in SP-1200 mode, blank in MPC3000 mode
 pe = pg.add_page("edit")
 pe.label("BAR", 0, 0)
 BF = pe.value("", 3, 0, fmt="  0", lo=1, hi=999, default=1)
@@ -75,6 +90,10 @@ TRK = pe.choice(" TK", 10, 0, ["  A"] + ["%3d" % i for i in range(1, 65)], defau
 SHI = pe.choice("", 0, 1, SHIFT_OPTS, default=24)
 PADL = pe.dlabel(12, 1, 4)
 pe.message()
+ps = pg.add_page("swing")                                     # v3.0: SWING TYPE (PARAMS on the TC / EDIT page)
+ps.label("SWING TYPE", 0, 0)
+STY = ps.choice("", 0, 1, ["MPC3000  96 PPQN", "SP-1200  24 PPQN"], default=0)   # 0 = MPC3000, 1 = SP-1200
+(LMODE, RET, EKEEP, LSEQ) = [pg.alloc_slot() for _ in range(4)]    # mode applied; page PARAMS came from; EDIT: keep its fields
 (ACT, LTCI, LSWI, GTI, GSW, G, OFF, PP0, SNN, SNLO, SNHI, PN, WRAP, LASTTRK, EACT, PADSEL, CNT, PTK) = \
     [pg.alloc_slot() for _ in range(18)]
 MSGB = [pg.alloc_slot() for _ in range(4)]
@@ -93,6 +112,40 @@ pg.defaults[CUR] = 0xFFFF
 def call(m, lbl): m.a.movl_pool(lbl, 2); m.a.jsr(2); m.a.nop()
 def jmpl(m, lbl): m.a.movl_pool(lbl, 2); m.a.jmp(2); m.a.nop()
 def rdb(m, addr, r): m.imm32(addr, r); m.a.movb_ld(r, r); m.a.extu_b(r, r)
+def fidp(p, slot): return [it[1] for it in p.items if it[0] in ('choice', 'value') and it[-1] == slot][0]   # (printfx)
+
+# ---- v3.0: PARAMS -> SWING TYPE page, and back ----
+def params_key(frm, keep):
+    """PARAMS on page 'frm' opens SWING TYPE (remembers 'frm'); other keys fall through to CANCEL / DO IT (r9 kept)"""
+    def fn(m, hret0, hret1):
+        a = m.a; kx = m.newlabel('kx')
+        a.mov_rm_rn(8, 1); a.add_imm(2, 1); a.movw_ld(1, 10); a.extu_w(10, 10)
+        a.mov_imm(K_PARAMS, 0); a.cmpeq(0, 10); m.bf_far(kx)
+        m.imm32(frm.addr['page'], 0); st(m, 0, RET)
+        if keep: sti(m, 1, EKEEP)
+        m.imm32(ps.addr['page'], 5); call(m, '__tcgo0'); jmpl(m, hret1)
+        m.pool_jump()
+        a.deflabel(kx)
+    return fn
+def go_back(m):
+    """back to the page PARAMS came from (TC page if none)"""
+    a = m.a; ok = m.newlabel('ok')
+    ld(m, RET, 5); a.tst_rr(5, 5); a.bf_lbl(ok); m.imm32(pg.addr['page'], 5); a.deflabel(ok)
+    call(m, '__tcgo0')
+def s_key(m, hret0, hret1):
+    a = m.a; kx = m.newlabel('kx')
+    a.mov_rm_rn(8, 1); a.add_imm(2, 1); a.movw_ld(1, 10); a.extu_w(10, 10)
+    a.mov_imm(K_PARAMS, 0); a.cmpeq(0, 10); m.bf_far(kx)
+    go_back(m); jmpl(m, hret1)
+    m.pool_jump()
+    a.deflabel(kx)
+def s_cancel(m, hret1):
+    go_back(m); jmpl(m, hret1); m.pool_jump()
+pg.on_event(2, params_key(pg, False))
+pe.on_event(2, params_key(pe, True))
+ps.on_event(2, s_key)
+ps.cancel_fn = s_cancel
+ps.on_doit(go_back)
 
 def emit_snap(m):
     """'__tcsnap0': r4 = tick, r5 = grid, r6 = swing offset -> r0 = MPC3000 position. r0-r7"""
@@ -129,17 +182,21 @@ def fire(m):
     # TC page: on entry the fields show the OS settings; a field changed with the wheel goes to the OS
     ld(m, ACT, 0); a.tst_rr(0, 0); ent = m.newlabel('ent'); m.bf_far(ent)
     ld(m, GTI, 0); m.imm32(TCI, 1); a.movb_st(0, 1); st(m, 0, LTCI)
-    ld(m, GSW, 4); a.mov_imm(0, 5)
-    for i, s in enumerate(SWSTEPS[1:], 1):
-        n = m.newlabel('sw'); a.mov_imm(s, 0); a.cmpge(0, 4); a.bf_lbl(n); a.mov_imm(i, 5); a.deflabel(n)
+    sti(m, 0, EKEEP)
+    ld(m, GSW, 4); call(m, '__tcsidx0')
     m.imm32(SWI, 1); a.mov_rm_rn(5, 0); a.movb_st(0, 1); st(m, 5, LSWI); sti(m, 1, ACT)
     m.imm32(EVQ + 0x70, 1); a.mov_imm(1, 0); a.movl_st(0, 1)
     a.deflabel(ent)
     rdb(m, TCI, 9); ld(m, LTCI, 0); a.cmpeq(9, 0); nt = m.newlabel('nt'); m.bt_far(nt)
     st(m, 9, LTCI); m.imm32(ID_TC, 4); a.mov_rm_rn(9, 5); call(m, '__tcpset0')
     a.deflabel(nt)
-    rdb(m, SWI, 9); ld(m, LSWI, 0); a.cmpeq(9, 0); ns_ = m.newlabel('ns'); m.bt_far(ns_)
-    st(m, 9, LSWI); a.movl_pool('tc_swt', 2); a.mov_rm_rn(9, 0); a.shll2(0); a.add_rr(0, 2); a.movl_ld(2, 5)
+    rdb(m, SWI, 9)
+    # SP-1200: six steps; the wheel past 71% (the 7th entry, also "71%") goes back to 71% = step 5
+    nc7 = m.newlabel('nc7'); ld(m, LMODE, 0); a.tst_rr(0, 0); m.bt_far(nc7); a.mov_imm(6, 0); a.cmpeq(0, 9); m.bf_far(nc7)
+    a.mov_imm(5, 9); m.imm32(SWI, 1); a.mov_rm_rn(9, 0); a.movb_st(0, 1); m.imm32(EVQ + 0x70, 1); a.mov_imm(1, 0); a.movl_st(0, 1)
+    a.deflabel(nc7)
+    ld(m, LSWI, 0); a.cmpeq(9, 0); ns_ = m.newlabel('ns'); m.bt_far(ns_)
+    st(m, 9, LSWI); call(m, '__tcswt0'); a.mov_rm_rn(9, 0); a.shll2(0); a.add_rr(0, 2); a.movl_ld(2, 5)
     m.imm32(ID_SW, 4); call(m, '__tcpset0')
     a.deflabel(ns_)
     jmpl(m, '__tc_end0'); m.pool_jump()
@@ -196,10 +253,15 @@ def subs(m):
     a.mov_imm(50, 1); c1 = m.newlabel('c1'); a.cmpge(1, 11); a.bt_lbl(c1); a.mov_imm(50, 11); a.deflabel(c1)
     a.mov_imm(75, 1); c2 = m.newlabel('c2'); a.cmpgt(1, 11); a.bf_lbl(c2); a.mov_imm(75, 11); a.deflabel(c2)
     st(m, 11, GSW)
+    call(m, '__tcmode0')                                                                 # v3.0: swing type changed?
+    # SP-1200 with TC OFF: the 24 PPQN grid (4 ticks)
+    sg_ = m.newlabel('sg'); ld(m, LMODE, 0); a.tst_rr(0, 0); a.bt_lbl(sg_); a.mov_imm(1, 0); a.cmpeq(0, 10); a.bf_lbl(sg_)
+    a.mov_imm(SP_GRID, 10); a.deflabel(sg_); st(m, 10, G)
     emit_off(m, 10, 11, 12); st(m, 12, OFF)
-    # swing to fix only on straight grids with SW > 50
-    fx = m.newlabel('fx')
-    a.tst_rr(12, 12); m.bt_far(fx)
+    # notes to fix: straight grids with SW > 50, or SP-1200 TC OFF (24 PPQN grid)
+    fx, fgo = m.newlabel('fx'), m.newlabel('fgo')
+    a.tst_rr(12, 12); a.bf_lbl(fgo); a.mov_imm(SP_GRID, 0); a.cmpeq(0, 10); m.bf_far(fx)
+    a.deflabel(fgo)
     call(m, '__tcfix0')
     a.deflabel(fx)
     a.ldsl_pr(); a.rts(); a.nop()
@@ -211,6 +273,9 @@ def subs(m):
     bad, ret = m.newlabel('bad'), m.newlabel('ret')
     m.imm32(CURSEQ, 1); a.movl_ld(1, 8)                                                  # r8 = sequence
     m.imm32(ARENA_LO, 1); a.cmphs(1, 8); m.bf_far(bad); m.imm32(ARENA_HI, 1); a.cmphs(1, 8); m.bt_far(bad)
+    # v3.0: another sequence = start over (its notes are not new recordings; SP-1200 TC OFF fixes on every grid)
+    ld(m, LSEQ, 0); a.cmpeq(8, 0); sq = m.newlabel('sq'); a.bt_lbl(sq); st(m, 8, LSEQ); jmpl(m, bad)
+    a.deflabel(sq)
     m.imm32(EV_OFF, 9); a.add_rr(8, 9)                                                    # r9 = first event
     m.imm32(PLAYPTR, 1); a.movl_ld(1, 10)                                                 # r10 = playhead
     a.cmphs(9, 10); m.bf_far(bad)
@@ -311,6 +376,47 @@ def subs(m):
     a.deflabel(ret); a.ldsl_pr(); a.rts(); a.nop()
     m.pool_jump()
 
+    # ---- v3.0 swing type ----
+    # __tcswt0: r2 = Swing% table of the type in use (MPC3000 / SP-1200). r0
+    a.deflabel('__tcswt0'); ld(m, LMODE, 0); a.tst_rr(0, 0); a.movl_pool('tc_swt', 2); w0 = m.newlabel('w0'); a.bt_lbl(w0)
+    a.movl_pool('__tcswsp1', 2); a.deflabel(w0); a.rts(); a.nop()
+    m.pool_jump()
+    # __tcsidx0: r4 = OS Swing% -> r5 = step of the type in use (the step at or below; SP 62 -> 63, 66 -> 67). r0
+    a.deflabel('__tcsidx0'); a.mov_imm(0, 5); ld(m, LMODE, 0); a.tst_rr(0, 0); spi = m.newlabel('spi'); m.bf_far(spi)
+    for mode in (0, 1):
+        if mode: a.deflabel(spi)
+        for i, s in enumerate(SW_TH[mode], 1):
+            n = m.newlabel('sw'); a.mov_imm(s, 0); a.cmpge(0, 4); a.bf_lbl(n); a.mov_imm(i, 5); a.deflabel(n)
+        a.rts(); a.nop()
+    m.pool_jump()
+    # __tcgo0: r5 = page -> opens it IN PLACE of the open one (OS back, then push: the page stack stays as deep; printfx px_go)
+    a.deflabel('__tcgo0'); a.stsl_pr(); a.movl_st_dec(5, 15)
+    m.imm32(EVQ, 4); a.mov_imm(0, 5); a.mov_imm(2, 6); m.imm32(OS_PUSH_PAGE, 2); a.jsr(2); a.nop()
+    a.movl_ld_inc(15, 5); m.imm32(EVQ, 4); a.mov_imm(0, 6); m.imm32(OS_PUSH_PAGE, 2); a.jsr(2); a.nop()
+    a.ldsl_pr(); a.rts(); a.nop()
+    m.pool_jump()
+    # __tcmode0 (bg, r11 = OS Swing% in, out): the SWING TYPE field changed -> OS Swing% to the nearest step of the new
+    # type, the TC page's SW strings and the "SP" mark. r0-r7, r13 (r10 kept)
+    a.deflabel('__tcmode0'); a.stsl_pr()
+    mr = m.newlabel('mr')
+    rdb(m, STY, 13); a.mov_imm(1, 0); a.cmphi(0, 13); mk = m.newlabel('mk'); a.bf_lbl(mk); a.mov_imm(1, 13); a.deflabel(mk)
+    ld(m, LMODE, 0); a.cmpeq(13, 0); m.bt_far(mr)
+    st(m, 13, LMODE)
+    a.mov_rm_rn(11, 4); call(m, '__tcsidx0')                                              # r5 = step
+    m.imm32(SWI, 1); a.mov_rm_rn(5, 0); a.movb_st(0, 1); st(m, 5, LSWI)
+    call(m, '__tcswt0'); a.mov_rm_rn(5, 0); a.shll2(0); a.add_rr(0, 2); a.movl_ld(2, 11); st(m, 11, GSW)
+    m.imm32(ID_SW, 4); a.mov_rm_rn(11, 5); call(m, '__tcpset0')
+    # SW strings (7 x "NN%\0", in the choice's string table: widget +0x24 model, +0x20 desc, +4 strings)
+    m.imm32(pg.addr['values'][fidp(pg, SWI)], 1); a.movl_ld_disp(1, 0x24, 1); a.movl_ld_disp(1, 0x20, 1); a.movl_ld_disp(1, 4, 1)
+    a.tst_rr(13, 13); a.movl_pool('__tcstr0', 2); s0 = m.newlabel('s0'); a.bt_lbl(s0); a.movl_pool('__tcstr1', 2); a.deflabel(s0)
+    a.mov_imm(28, 3); cl_ = m.newlabel('cl')
+    a.deflabel(cl_); a.movb_ld(2, 0); a.movb_st(0, 1); a.add_imm(1, 2); a.add_imm(1, 1); a.dt(3); a.bf_lbl(cl_)
+    m.imm32(pg.addr['dlabels'][MODEL], 1); a.mov_imm(ord(' '), 0); a.mov_imm(ord(' '), 3); a.tst_rr(13, 13); s1 = m.newlabel('s1')
+    a.bt_lbl(s1); a.mov_imm(ord('S'), 0); a.mov_imm(ord('P'), 3); a.deflabel(s1); a.movb_st(0, 1); a.add_imm(1, 1); a.movb_st(3, 1)
+    m.imm32(EVQ + 0x70, 1); a.mov_imm(1, 0); a.movl_st(0, 1)
+    a.deflabel(mr); a.ldsl_pr(); a.rts(); a.nop()
+    m.pool_jump()
+
     emit_snap(m)
     # ---- tables ----
     skip = m.newlabel('tskip'); a.bra_lbl(skip); a.nop()
@@ -319,6 +425,11 @@ def subs(m):
     for w in TICKS: a._emit(w & 0xFFFF); a._emit(w >> 16)
     a.deflabel('tc_swt')
     for w in SWSTEPS: a._emit(w & 0xFFFF); a._emit(w >> 16)
+    a.deflabel('__tcswsp1')
+    for w in SWSTEPS_SP: a._emit(w & 0xFFFF); a._emit(w >> 16)
+    for lbl, steps in (('__tcstr0', SWSTEPS), ('__tcstr1', SWSTEPS_SP)):
+        a.deflabel(lbl); bs_ = _swstr(steps)
+        for i in range(0, len(bs_), 2): a._emit(bs_[i] | (bs_[i + 1] << 8))
     a.deflabel(skip)
 
 
@@ -376,6 +487,11 @@ def e_fire(m):
     a = m.a
     ld(m, EACT, 0); a.tst_rr(0, 0); ent = m.newlabel('ent'); m.bf_far(ent)
     sti(m, 1, EACT)
+    # back from SWING TYPE: bars, track and pads as they were (only the redraw)
+    kp = m.newlabel('kp'); ld(m, EKEEP, 0); a.tst_rr(0, 0); m.bt_far(kp); sti(m, 0, EKEEP)
+    m.imm32(EVQ + 0x70, 1); a.mov_imm(1, 0); a.movl_st(0, 1); jmpl(m, ent)
+    m.pool_jump()
+    a.deflabel(kp)
     ld(m, LASTTRK, 0); a.tst_rr(0, 0); nl = m.newlabel('nl'); a.bt_lbl(nl); a.mov_imm(64, 1); a.cmphi(1, 0); a.bt_lbl(nl)
     m.imm32(TRK, 1); a.movb_st(0, 1); a.deflabel(nl)
     m.imm32(CURSEQ, 1); a.movl_ld(1, 8); a.mov_rm_rn(8, 1); a.add_imm(BARS_OFF, 1); a.movw_ld(1, 2); a.extu_w(2, 2)
@@ -775,4 +891,69 @@ if __name__ == '__main__':
         for k in range(n + 1): play_to(k % n)
     assert evs() == after, [(a_, b_) for a_, b_ in zip(evs(), after) if a_ != b_][:8]
     print("  ok two loops of playback after DO IT: nothing moved again")
+
+    # --- 6. v3.0: SWING TYPE (PARAMS), SP-1200 ---
+    # the SP-1200 grooves (sp1200/*.agr): swung 1/16 measured at 25.92 27.91 29.95 31.93 33.95 ticks -> the MPC3000 ticks
+    assert [24 + ref_off(24, s) for s in SWSTEPS_SP[:6]] == [24, 26, 28, 30, 32, 34]
+    def pushes(): return [(R32(PUSHLOG + 16 * (k + 1)), R32(PUSHLOG + 16 * (k + 1) + 4)) for k in range(R32(PUSHLOG))]
+    def swstrs():
+        w = pg.values[fidp(pg, SWI)]; d_ = R32(R32(R32(w + 0x24) + 0x20) + 4)
+        return bytes(e.rd(d_ + i, 1) for i in range(28))
+    def mark(): return bytes(e.rd(pg.dlabels[MODEL] + i, 1) for i in range(2)).decode()
+    def show(p_): h.ram_w32(EVQ + 0x68, p_.page); t.pg = p_; t.fire(3)
+    assert R32(LMODE) == 0 and e.rd(STY, 1) == 0 and swstrs() == _swstr(SWSTEPS) and mark() == "  ", "default MPC3000"
+    W32(PSTORE, 2); W32(PSTORE + 4, 75); show(pg); assert e.rd(SWI, 1) == 6
+    W32(PUSHLOG, 0); assert t.event(2, K_PARAMS) == 1 and pushes() == [(0, 2), (ps.page, 0)], pushes()
+    show(ps); assert R32(RET) == pg.page
+    e.wr(STY, 1, 1); t.fire(2)
+    assert R32(LMODE) == 1 and R32(PSTORE + 4) == 71 and swstrs() == _swstr(SWSTEPS_SP) and mark() == "SP", (R32(PSTORE + 4), swstrs())
+    print("  ok PARAMS on the TC page -> SWING TYPE; SP-1200: OS Swing 75 -> 71, SW steps %s, 'SP' on the TC page" % swstrs().split(b'\0')[:6])
+    W32(PUSHLOG, 0); assert t.event(2, K_PARAMS) == 1 and pushes() == [(0, 2), (pg.page, 0)], pushes()
+    show(pg); assert e.rd(SWI, 1) == 5, e.rd(SWI, 1)
+    e.wr(SWI, 6, 1); t.fire(2); assert e.rd(SWI, 1) == 5 and R32(PSTORE + 4) == 71, "past 71%: back to 71"
+    e.wr(SWI, 3, 1); t.fire(2); assert R32(PSTORE + 4) == 63 and R32(OFF) == 6 and R32(G) == 24, (R32(PSTORE + 4), R32(OFF))
+    e.wr(SWI, 4, 1); t.fire(2); assert R32(PSTORE + 4) == 67 and R32(OFF) == 8
+    print("  ok PARAMS again -> back to the TC page on 71%; wheel past 71 stays 71; 63% -> OS 63 (1/16 +6 = MPC 62), 67% -> +8")
+    # Note Repeat (the patched OS code) with the SP values: the same ticks as MPC3000
+    for s_sp, s_mpc in ((63, 62), (67, 66), (54, 54), (71, 71)):
+        assert nr_run(1, 24, s_sp) == nr_run(1, 24, s_mpc) == ref_off(24, s_sp) and nr_run(2, 48, s_sp) == ref_off(48, s_sp)
+    print("  ok Note Repeat in SP-1200 mode: 63/67 swing like MPC 62/66 (1/16 +6/+8, 1/8 +12/+16)")
+    # SP-1200, TC OFF: recorded notes -> 24 PPQN grid (4 ticks); old notes untouched
+    W32(PSTORE, 6); t.fire(2); assert R32(G) == SP_GRID and R32(OFF) == 0, (R32(G), R32(OFF))
+    # the user selects another sequence (off-grid old notes) while it plays: they are NOT taken as new recordings
+    P = 0x881F0000
+    seq = testseq.make_seq(bars=2, evs=[(0, 1, 36, 100, 48), (31, 1, 42, 90, 10), (96, 1, 36, 100, 48), (127, 1, 42, 90, 10)])
+    for i in range(0, len(seq), 4): W32(P + i, struct.unpack_from('<I', seq, i)[0])
+    t.close(); W32(CURSEQ, P); play_to(2); t.fire(3); play_to(0); t.fire(3)
+    assert R32(PN) == 0 and (31, 1, 42) in evs() and (127, 1, 42) in evs(), (R32(PN), evs())
+    play_to(3); os_record(127, 38); t.fire(1); assert R32(PN) == 1, R32(PN)
+    play_to(evs().index((127, 1, 38)) + 1); t.fire(3)
+    play_to(4); os_record(125, 40); t.fire(3)                                  # recorded just behind the playhead
+    ev_ = evs(); assert (128, 1, 38) in ev_ and (124, 1, 40) in ev_ and (31, 1, 42) in ev_ and (127, 1, 42) in ev_, ev_
+    print("  ok SP-1200 TC OFF: recorded 127 -> 128, 125 -> 124 (24 PPQN); old notes 31 / 127 untouched: %s" % ev_)
+    # EDIT -> PARAMS -> SWING TYPE -> CANCEL: EDIT as it was
+    seq = testseq.make_seq(bars=4, evs=pat)
+    for i in range(0, len(seq), 4): W32(P + i, struct.unpack_from('<I', seq, i)[0])
+    W32(PLAYPTR, P + EV_OFF); show(pg); show(pe)
+    assert (R32(BF), R32(BT)) == (1, 4)
+    W32(BF, 2); W32(BT, 3); e.wr(TRK, 0, 1); t.fire(2)
+    W32(PUSHLOG, 0); assert t.event(2, K_PARAMS) == 1 and pushes() == [(0, 2), (ps.page, 0)] and R32(RET) == pe.page
+    show(ps); W32(PUSHLOG, 0); assert t.event(2, 0x2D) == 1 and pushes() == [(0, 2), (pe.page, 0)], pushes()
+    show(pe); assert (R32(BF), R32(BT), e.rd(TRK, 1)) == (2, 3, 0), (R32(BF), R32(BT), e.rd(TRK, 1))
+    print("  ok EDIT: PARAMS -> SWING TYPE, CANCEL -> EDIT with its bars 2-3 and track kept")
+    # EDIT DO IT, SP-1200, TC OFF: every note of bars 2-3 on the 24 PPQN grid
+    e.wr(SHI, 24, 1); t.fire(2)
+    before = evs(); t.event(2, 0x2E); t.fire(1); after = evs()
+    want = sorted(((ref_snap(x[0], SP_GRID, 50) % 1536) if 384 <= x[0] < 1152 else x[0], x[1], x[2]) for x in before)
+    assert sorted(after) == want and all(x[0] % 4 == 0 for x in after if 384 <= x[0] < 1152), [(a_, b_) for a_, b_ in zip(sorted(after), want) if a_ != b_][:8]
+    assert any(x[0] % 4 for x in before if 384 <= x[0] < 1152) and any(x[0] % 4 for x in after if x[0] < 384)
+    print("  ok EDIT DO IT, SP-1200 TC OFF: bars 2-3 on the 24 PPQN grid, bars 1 and 4 untouched (%s)" % t.msg())
+    # back to MPC3000 (DO IT on SWING TYPE): 63 -> 62, TC OFF = untouched again, strings back
+    W32(PSTORE, 2); W32(PSTORE + 4, 63); t.fire(2)
+    t.event(2, K_PARAMS); show(ps); e.wr(STY, 0, 1); t.fire(2)
+    assert R32(LMODE) == 0 and R32(PSTORE + 4) == 62 and swstrs() == _swstr(SWSTEPS) and mark() == "  ", R32(PSTORE + 4)
+    W32(PUSHLOG, 0); t.event(2, 0x2E); assert pushes() == [(0, 2), (pe.page, 0)], ("DO IT -> back to EDIT", pushes())
+    W32(PSTORE, 6); show(pe); assert R32(G) == 1 and R32(OFF) == 0
+    before = evs(); W32(BF, 1); W32(BT, 4); t.fire(1); t.event(2, 0x2E); t.fire(1); assert evs() == before, "MPC3000 TC OFF: untouched"
+    print("  ok MPC3000 again: OS 63 -> 62, SW strings / mark back; DO IT on SWING TYPE -> EDIT; TC OFF DO IT changes nothing")
     print("OK: TC 3000 -> TC3000.WAV")

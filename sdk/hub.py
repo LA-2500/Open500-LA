@@ -113,7 +113,7 @@ SPL_FONT = {   # (riga 1, riga 2); 'F' = blocco pieno della ROM, '_' = spazio
 }
 # 2026-11-07 (user): plain text in the MPC's own font, still (no scrolling): "LOADING..." / "LA v<set>", centred,
 # for SPL_STEPS x 125 ms. (The block font above is no longer used; the CGRAM is still saved / restored as before.)
-LA_VERSION = "2.9c"                                 # the add-on set (package folder "LA v2.5")
+LA_VERSION = "3.0"                                # the add-on set (package folder "LA v2.5")
 SPL_TEXT = "LA v" + LA_VERSION
 SPL_ORDER = list(SPL_SHAPES)[:8]                         # = caratteri 0..7 (loaded, not shown)
 def spl_line(s):
