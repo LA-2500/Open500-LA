@@ -1,4 +1,4 @@
-# Open500 LA v3.0
+# Open500 LA v3.1
 
 Add-on set for the **Akai MPC500** (OS 1.31), built on the [Open500](https://github.com/M45K/open500) platform. 14 native-code add-ons delivered as WAV files and loaded through the MPC500 sample loader. Replaced pages keep the original MPC500 page one entry away (ENTER DEFAULT). Flashing the factory OS removes Open500 completely; the bootloader is never modified.
 
@@ -6,7 +6,7 @@ Add-on set for the **Akai MPC500** (OS 1.31), built on the [Open500](https://git
 
 | | |
 |---|---|
-| **[⬇ The add-ons (LA-v3.0.zip)](../../releases/latest/download/LA-v3.0.zip)** | The 14 add-on files, in the order the MPC must load them |
+| **[⬇ The add-ons (LA-v3.1.zip)](../../releases/latest/download/LA-v3.1.zip)** | The 14 add-on files, in the order the MPC must load them |
 | **[⬇ Quick Start (PDF)](../../releases/latest/download/Open500-LA-Quick-Start.pdf)** | Installation and technical specifications, 3 pages |
 | **[⬇ Manual (PDF)](../../releases/latest/download/Open500-Manual-LA-v3.0.pdf)** | Full reference for every add-on |
 | **[⬇ Firmware patcher (HTML)](../../releases/latest/download/Open500-LA-Firmware-Patcher.html)** | Builds the LA firmware from Akai OS 1.31, client-side |
@@ -16,8 +16,8 @@ Earlier versions are on the [Releases](../../releases) page.
 ## Install
 
 1. **Firmware (one time).** Open the firmware patcher, drop Akai's unmodified `mpc500.bin` (OS 1.31, 514,732 bytes) onto it, save the generated `MPC500.bin` to the card root, and flash it (SHIFT + power on, REC). Required: the add-ons run only on the LA firmware.
-2. **Add-ons.** Extract **LA-v3.0.zip** directly to the CF card root. The MPC500 loads files in write order; the zip stores them in load order (`LA.WAV` first, `MASTER.WAV` last).
-3. **Load.** MODE + PAD 2 (LOAD), select `LA v3.0`, DO IT. Add-ons run from RAM: reload after every power-on.
+2. **Add-ons.** Extract **LA-v3.1.zip** directly to the CF card root. The MPC500 loads files in write order; the zip stores them in load order (`LA.WAV` first, `MASTER.WAV` last).
+3. **Load.** MODE + PAD 2 (LOAD), select `LA v3.1`, DO IT. Add-ons run from RAM: reload after every power-on.
 
 Full procedure, specifications and troubleshooting: the [Quick Start](../../releases/latest/download/Open500-LA-Quick-Start.pdf).
 

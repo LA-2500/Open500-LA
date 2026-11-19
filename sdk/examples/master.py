@@ -456,7 +456,9 @@ def ix_main(m):
     # Record page "Monitor" always OFF while MASTER is loaded (user 2026-11-05: with it on, the OS mixes the DRY input
     # into the output in software, on top of INPUT FX's effected monitor -> doubled, metallic). SMP+0x14 = Monitor
     # (setter 0x884EC14E); 0x884EC586(SMP) applies it: Monitor 0 -> the 4 input->output gains of the render = 0.
+    # Only while INPUT FX is ON (2026-11-18: forced always, the stock MPC Record page had no way to hear the inputs).
     mo = m.newlabel('mo')
+    rdb(m, INON, 0); a.tst_rr(0, 0); m.bt_far(mo)                     # INPUT FX off: Monitor is the user's
     m.imm32(IX.SMP + IX.SMP_MON, 1); a.movl_ld(1, 0); a.tst_rr(0, 0); m.bt_far(mo)
     a.mov_imm(0, 0); a.movl_st(0, 1); m.imm32(IX.SMP, 4); m.imm32(IX.SMP_MONAPPLY, 2); a.jsr(2); a.nop()
     a.deflabel(mo)
@@ -2103,7 +2105,12 @@ def selftest_infx(h, e, tick, FR, TEMPO):
     W32(IX.SMP + 0x30, 0); W32(IX.SMP + IX.SMP_MON, 1); fire(2)
     assert R32(IX.SMP + IX.SMP_MON) == 0 and R32(IX.SMP + 0x30) == 0x55, "Monitor forced OFF and applied"
     W32(IX.SMP + 0x30, 0); fire(2); assert R32(IX.SMP + 0x30) == 0, "applied only when it was on"
-    print("  ok Record page Monitor ON -> switched OFF at once (OS apply 0x%08x called once)" % IX.SMP_MONAPPLY)
+    inon0 = e.rd(INON, 1); e.wr(INON, 0, 1); W32(IX.SMP + IX.SMP_MON, 1); fire(2)
+    assert R32(IX.SMP + IX.SMP_MON) == 1 and R32(IX.SMP + 0x30) == 0, "INPUT FX off: Monitor left alone"
+    e.wr(INON, inon0, 1); fire(2); assert R32(IX.SMP + IX.SMP_MON) == 0, "INPUT FX back on: Monitor OFF again"
+    W32(IX.SMP + 0x30, 0)
+    print("  ok Record page Monitor ON -> switched OFF at once while INPUT FX is on (OS apply 0x%08x called once);"
+          " INPUT FX off -> Monitor left as the user set it" % IX.SMP_MONAPPLY)
     # ---- SOURCE MAIN: the dry output mix goes through the effects into the input ring ----
     e.wr(DPF, 0, 1); e.wr(MPF, MI["JUNO II"], 1); e.wr(SRCF, 1, 1); fire(2)
     mains = []
